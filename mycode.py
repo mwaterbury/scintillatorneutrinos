@@ -286,7 +286,7 @@ class Analyzer():
             image = np.array(event[layer])
             if len(image)==0: image = np.array([[0,0,0]])
             hist = ax.hist2d(image.T[0], image.T[1], weights=image.T[2], bins=bins,
-                             norm=matplotlib.colors.LogNorm(),vmin=1,vmax=100,cmap='cool')
+                             norm=matplotlib.colors.LogNorm(vmin=1,vmax=100),cmap='cool')
             ax.set_xticks([])
             ax.set_yticks([])
         fig.colorbar(hist[3], ax=ax4)
@@ -295,8 +295,8 @@ class Analyzer():
         ax5.hist2d(np.linspace(0.5,7.5,8), np.zeros(8) ,
                    weights=event['scintillator'][1:9],
                    bins=(np.linspace(0,8,9),[-1,1]),
-                   norm=matplotlib.colors.LogNorm(),
-                   vmin=0.1,vmax=1,cmap='rainbow')
+                   norm=matplotlib.colors.LogNorm(vmin=0.1,vmax=1),
+                   cmap='rainbow')
         for x in np.linspace(0,7,8):
             ax5.plot([x,x],[-1,1],lw=multiplier,c="k")
             ax5.text(x+0.06,-0.75,str(int(x+1)))
