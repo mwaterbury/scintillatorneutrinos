@@ -18,6 +18,10 @@ class Analyzer():
     ########################################################
     
     def __init__(self):
+        
+        self.muon_data = []
+        self.numu_data = []
+        self.nuel_data = []
         self.prepare_all()
     
     def weight_muon_neutrinos(self,data):
@@ -180,30 +184,31 @@ class Analyzer():
         ls = listdir('NumpyArrays/')
 
         files = [file for file in ls if re.search(r'muon_neutrinos',file)]
-        self.muon_neutrino_data = np.array([])
+        self.numu_data = np.array([])
         for file in files:
             tmp = np.load('NumpyArrays/' + file, allow_pickle=True)
             self.weight_muon_neutrinos(tmp)
             np.save('NumpyArrays/' + file, tmp)
             
-            self.muon_neutrino_data = np.append(self.muon_neutrino_data, tmp)
+            self.numu_data = np.append(self.numu_data, tmp)
 
-        print (' ... found', len(self.muon_neutrino_data), 'nu_mu events in', round(time.time() - start_time,2), 'seconds')
-
+        print (' ... found', len(self.numu_data), 'nu_mu events in', round(time.time() - start_time,2), 'seconds')
+        
         # Prepare electron neutrinos
         start_time = time.time()
         ls = listdir('NumpyArrays/')
 
         files = [file for file in ls if re.search(r'elec_neutrinos',file)]
-        self.elec_neutrino_data = np.array([])
+        self.nuel_data = np.array([])
         for file in files:
             tmp = np.load('NumpyArrays/' + file, allow_pickle=True)
             self.weight_elec_neutrinos(tmp)
             np.save('NumpyArrays/' + file, tmp)
             
-            self.elec_neutrino_data = np.append(self.elec_neutrino_data, tmp)
+            self.nuel_data = np.append(self.nuel_data, tmp)
 
-        print (' ... found', len(self.elec_neutrino_data), 'nu_e events in', round(time.time() - start_time,2), 'seconds')
+        print (' ... found', len(self.nuel_data), 'nu_e events in', round(time.time() - start_time,2), 'seconds')
+
 
         # Prepare muon
         start_time = time.time()
@@ -333,24 +338,65 @@ class Analyzer():
                 event = self.muon_data[ievent]
                 if eval(requirement): found=True
             elif particle == 'nu_mu':
-                length = len(self.muon_neutrino_data)
+                length = len(self.numu_data)
                 ievent = random.randrange(length)
                 filename = "EventDisplays/Event_numu_"+str(ievent)+".pdf"
-                event = self.muon_neutrino_data[ievent]
+                event = self.numu_data[ievent]
                 if eval(requirement): found=True
             elif particle == 'nu_el':
-                length = len(self.elec_neutrino_data)
+                length = len(self.nuel_data)
                 ievent = random.randrange(length)
                 filename = "EventDisplays/Event_nuel_"+str(ievent)+".pdf"
-                event = self.elec_neutrino_data[ievent]
+                event = self.nuel_data[ievent]
                 if eval(requirement): found=True
         self.display_event(event,filename=filename)
 
+    
+    ########################################################
+    # Observables
+    ########################################################
+    
+    def define_observable(self, name, definition):
+        for event in self.muon_data: event[name] = eval(definition)
+        for event in self.numu_data: event[name] = eval(definition)
+        for event in self.nuel_data: event[name] = eval(definition)
+    
+    def get_histodata(self, particle, observable, bins=None, requirement=None):
+    
+        #check particle type, assign data:
+        particles = {'muon': self.muon_data, 'nu_mu': self.numu_data, 'nu_el': self.nuel_data}
+        if particle in particles.keys(): data = particles[particle]
+        else: print ("Error: particle must be either 'muon', 'nu_mu' or 'nu_el'")
+        
+        # loop through events
+        selected_data = []
+        for event in data:
+            if eval(requirement) == False: continue
+            value = event[observable]
+            weight = event['weight']
+            selected_data.append([value, weight, weight*weight])
+        selected_data = np.array(selected_data)
+
+        # bin data get sum of weights, and squared sum of weights for each bin
+        yvals , _ = np.histogram(selected_data.T[0], weights=selected_data.T[1], bins=bins)
+        yvals2, _ = np.histogram(selected_data.T[0], weights=selected_data.T[2], bins=bins)
+
+        # reformat binned data
+        # for uncertainties, see https://www.zeuthen.desy.de/~wischnew/amanda/discussion/wgterror/working.html
+        xvals = (bins[:-1] + bins[1:]) / 2.
+        binned_data = np.array([xvals, yvals, np.sqrt(yvals2)])
+
+        return binned_data
+    
+    
     ########################################################
     # Binning
     ########################################################
+    
+    
+    
 
-    def binCalEnergy(self, particle, bins = None, requirement=None, weighted = True):
+    def binCalEnergy(self, particle, bins = None, requirement=None, weighted=True):
 
         #check particle type:
         if particle not in ['muon', 'nu_mu', 'nu_el']:
@@ -360,9 +406,9 @@ class Analyzer():
         if particle == 'muon':
             data = self.muon_data
         elif particle == 'nu_mu':
-            data = self.muon_neutrino_data
+            data = self.numu_data
         elif particle == 'nu_el':
-            data = self.elec_neutrino_data
+            data = self.nuel_data
         
         func = eval('lambda event: ' + requirement)
         matches = [event for event in data if func(event)]
@@ -439,9 +485,9 @@ class Analyzer():
         if particle == 'muon':
             data = self.muon_data
         elif particle == 'nu_mu':
-            data = self.muon_neutrino_data
+            data = self.numu_data
         elif particle == 'nu_el':
-            data = self.elec_neutrino_data
+            data = self.nuel_data
         
         func = eval('lambda event: ' + requirement)
         return len([True for event in data if func(event)])
@@ -456,9 +502,9 @@ class Analyzer():
         if particle == 'muon':
             data = self.muon_data
         elif particle == 'nu_mu':
-            data = self.muon_neutrino_data
+            data = self.numu_data
         elif particle == 'nu_el':
-            data = self.elec_neutrino_data
+            data = self.nuel_data
         
         func = eval('lambda event : ' + requirement)
         # Apply an early cut with the scintillator cut so we don't search the same events repeatedly
