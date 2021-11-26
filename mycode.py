@@ -17,12 +17,17 @@ class Analyzer():
     # Initialization and Prepare Weights
     ########################################################
     
-    def __init__(self):
+    def __init__(self, prepare_muon=True, prepare_numu=True, prepare_nuel=True):
         
-        self.muon_data = []
-        self.numu_data = []
-        self.nuel_data = []
-        self.prepare_all()
+        # Logging
+        print ('Prepare Data Manually')
+        
+        if prepare_numu: self.prepare_numu()
+        else: self.numu_data = []
+        if prepare_nuel: self.prepare_nuel()
+        else: self.nuel_data = []
+        if prepare_muon: self.prepare_muon()
+        else: self.muon_data = []
     
     def weight_muon_neutrinos(self,data):
     
@@ -174,10 +179,7 @@ class Analyzer():
         
         return simTot
 
-    def prepare_all(self,):
-        
-        # Logging
-        print ('Prepare Data Manually')
+    def prepare_numu(self,):
         
         # Prepare muon neutrinos
         start_time = time.time()
@@ -192,8 +194,9 @@ class Analyzer():
             
             self.numu_data = np.append(self.numu_data, tmp)
 
-        print (' ... found', len(self.numu_data), 'nu_mu events in', round(time.time() - start_time,2), 'seconds')
-        
+        print (' ... found', len(self.numu_data), 'numu events in', round(time.time() - start_time,2), 'seconds')
+
+    def prepare_nuel(self,):
         # Prepare electron neutrinos
         start_time = time.time()
         ls = listdir('NumpyArrays/')
@@ -207,9 +210,9 @@ class Analyzer():
             
             self.nuel_data = np.append(self.nuel_data, tmp)
 
-        print (' ... found', len(self.nuel_data), 'nu_e events in', round(time.time() - start_time,2), 'seconds')
+        print (' ... found', len(self.nuel_data), 'nue events in', round(time.time() - start_time,2), 'seconds')
 
-
+    def prepare_muon(self,):
         # Prepare muon
         start_time = time.time()
         ls = listdir('NumpyArrays/')
@@ -325,8 +328,8 @@ class Analyzer():
     def display_random_event(self, particle="muon", requirement="True"):
         
         #check particle type:
-        if particle not in ['muon', 'nu_mu', 'nu_el']:
-            print ("particle must be either 'muon', 'nu_mu' or 'nu_el'")
+        if particle not in ['muon', 'numu', 'nuel']:
+            print ("particle must be either 'muon', 'numu' or 'nuel'")
             return 1
         
         found=False
@@ -337,13 +340,13 @@ class Analyzer():
                 filename = "EventDisplays/Event_muon_"+str(ievent)+".pdf"
                 event = self.muon_data[ievent]
                 if eval(requirement): found=True
-            elif particle == 'nu_mu':
+            elif particle == 'numu':
                 length = len(self.numu_data)
                 ievent = random.randrange(length)
                 filename = "EventDisplays/Event_numu_"+str(ievent)+".pdf"
                 event = self.numu_data[ievent]
                 if eval(requirement): found=True
-            elif particle == 'nu_el':
+            elif particle == 'nuel':
                 length = len(self.nuel_data)
                 ievent = random.randrange(length)
                 filename = "EventDisplays/Event_nuel_"+str(ievent)+".pdf"
@@ -360,13 +363,18 @@ class Analyzer():
         for event in self.muon_data: event[name] = eval(definition)
         for event in self.numu_data: event[name] = eval(definition)
         for event in self.nuel_data: event[name] = eval(definition)
+
+    def define_observable_from_function(self, name, function):
+        for event in self.muon_data: event[name] = function(event)
+        for event in self.numu_data: event[name] = function(event)
+        for event in self.nuel_data: event[name] = function(event)
     
     def get_histodata(self, particle, observable, bins=None, requirement=None):
     
         #check particle type, assign data:
-        particles = {'muon': self.muon_data, 'nu_mu': self.numu_data, 'nu_el': self.nuel_data}
+        particles = {'muon': self.muon_data, 'numu': self.numu_data, 'nuel': self.nuel_data}
         if particle in particles.keys(): data = particles[particle]
-        else: print ("Error: particle must be either 'muon', 'nu_mu' or 'nu_el'")
+        else: print ("Error: particle must be either 'muon', 'numu' or 'nuel'")
         
         # loop through events
         selected_data = []
@@ -388,7 +396,31 @@ class Analyzer():
 
         return binned_data
     
-    
+
+    def plot_histogram(self, dataset, logx=False, logy=False, xlim=None, ylim=None, xlabel="Observable", filename=None):
+        
+        # prepare plot
+        matplotlib.rcParams.update({'font.size': 14})
+        fig = plt.figure(figsize=(8,6))
+        
+        # plot binned data
+        ax = plt.subplot(1,1,1)
+        for data, color, label in dataset:
+            for x,y,yerr in data.T: ax.errorbar(x, y, yerr=yerr, fmt='.', color=color)
+            ax.scatter(data.T[0][0], data.T[0][1], color=color, label=label, marker='.')
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Expected Event Rate [fb/bin]")
+        if logx: ax.set_xscale("log")
+        if logy: ax.set_yscale("log")
+        if xlim is not None: ax.set_xlim(xlim[0], xlim[1])
+        if ylim is not None: ax.set_ylim(ylim[0], ylim[1])
+
+        # finalize
+        ax.legend(frameon=False, labelspacing=0, fontsize=13)
+        ax.grid()
+        if filename is not None: fig.savefig(filename)
+        plt.show()
+
     ########################################################
     # Binning
     ########################################################
