@@ -17,8 +17,17 @@ class Analyzer():
     # Initialization and Prepare Weights
     ########################################################
     
-    def __init__(self):
-        self.prepare_all()
+    def __init__(self, prepare_muon=True, prepare_numu=True, prepare_nuel=True):
+        
+        # Logging
+        print ('Prepare Data Manually')
+        
+        if prepare_numu: self.prepare_numu()
+        else: self.numu_data = []
+        if prepare_nuel: self.prepare_nuel()
+        else: self.nuel_data = []
+        if prepare_muon: self.prepare_muon()
+        else: self.muon_data = []
     
     def weight_muon_neutrinos(self,data):
     
@@ -170,41 +179,40 @@ class Analyzer():
         
         return simTot
 
-    def prepare_all(self,):
-        
-        # Logging
-        print ('Prepare Data Manually')
+    def prepare_numu(self,):
         
         # Prepare muon neutrinos
         start_time = time.time()
         ls = listdir('NumpyArrays/')
 
         files = [file for file in ls if re.search(r'muon_neutrinos',file)]
-        self.muon_neutrino_data = np.array([])
+        self.numu_data = np.array([])
         for file in files:
             tmp = np.load('NumpyArrays/' + file, allow_pickle=True)
             self.weight_muon_neutrinos(tmp)
             np.save('NumpyArrays/' + file, tmp)
             
-            self.muon_neutrino_data = np.append(self.muon_neutrino_data, tmp)
+            self.numu_data = np.append(self.numu_data, tmp)
 
-        print (' ... found', len(self.muon_neutrino_data), 'nu_mu events in', round(time.time() - start_time,2), 'seconds')
+        print (' ... found', len(self.numu_data), 'numu events in', round(time.time() - start_time,2), 'seconds')
 
+    def prepare_nuel(self,):
         # Prepare electron neutrinos
         start_time = time.time()
         ls = listdir('NumpyArrays/')
 
         files = [file for file in ls if re.search(r'elec_neutrinos',file)]
-        self.elec_neutrino_data = np.array([])
+        self.nuel_data = np.array([])
         for file in files:
             tmp = np.load('NumpyArrays/' + file, allow_pickle=True)
             self.weight_elec_neutrinos(tmp)
             np.save('NumpyArrays/' + file, tmp)
             
-            self.elec_neutrino_data = np.append(self.elec_neutrino_data, tmp)
+            self.nuel_data = np.append(self.nuel_data, tmp)
 
-        print (' ... found', len(self.elec_neutrino_data), 'nu_e events in', round(time.time() - start_time,2), 'seconds')
+        print (' ... found', len(self.nuel_data), 'nue events in', round(time.time() - start_time,2), 'seconds')
 
+    def prepare_muon(self,):
         # Prepare muon
         start_time = time.time()
         ls = listdir('NumpyArrays/')
@@ -320,8 +328,8 @@ class Analyzer():
     def display_random_event(self, particle="muon", requirement="True"):
         
         #check particle type:
-        if particle not in ['muon', 'nu_mu', 'nu_el']:
-            print ("particle must be either 'muon', 'nu_mu' or 'nu_el'")
+        if particle not in ['muon', 'numu', 'nuel']:
+            print ("particle must be either 'muon', 'numu' or 'nuel'")
             return 1
         
         found=False
@@ -332,17 +340,229 @@ class Analyzer():
                 filename = "EventDisplays/Event_muon_"+str(ievent)+".pdf"
                 event = self.muon_data[ievent]
                 if eval(requirement): found=True
-            elif particle == 'nu_mu':
-                length = len(self.muon_neutrino_data)
+            elif particle == 'numu':
+                length = len(self.numu_data)
                 ievent = random.randrange(length)
                 filename = "EventDisplays/Event_numu_"+str(ievent)+".pdf"
-                event = self.muon_neutrino_data[ievent]
+                event = self.numu_data[ievent]
                 if eval(requirement): found=True
-            elif particle == 'nu_el':
-                length = len(self.elec_neutrino_data)
+            elif particle == 'nuel':
+                length = len(self.nuel_data)
                 ievent = random.randrange(length)
                 filename = "EventDisplays/Event_nuel_"+str(ievent)+".pdf"
-                event = self.elec_neutrino_data[ievent]
+                event = self.nuel_data[ievent]
                 if eval(requirement): found=True
         self.display_event(event,filename=filename)
 
+    
+    ########################################################
+    # Observables
+    ########################################################
+    
+    def define_observable(self, name, definition):
+        for event in self.muon_data: event[name] = eval(definition)
+        for event in self.numu_data: event[name] = eval(definition)
+        for event in self.nuel_data: event[name] = eval(definition)
+
+    def define_observable_from_function(self, name, function):
+        for event in self.muon_data: event[name] = function(event)
+        for event in self.numu_data: event[name] = function(event)
+        for event in self.nuel_data: event[name] = function(event)
+    
+    def get_histodata(self, particle, observable, bins=None, requirement=None):
+    
+        #check particle type, assign data:
+        particles = {'muon': self.muon_data, 'numu': self.numu_data, 'nuel': self.nuel_data}
+        if particle in particles.keys(): data = particles[particle]
+        else: print ("Error: particle must be either 'muon', 'numu' or 'nuel'")
+        
+        # loop through events
+        selected_data = []
+        for event in data:
+            if eval(requirement) == False: continue
+            value = event[observable]
+            weight = event['weight']
+            selected_data.append([value, weight, weight*weight])
+        selected_data = np.array(selected_data)
+
+        # bin data get sum of weights, and squared sum of weights for each bin
+        yvals , _ = np.histogram(selected_data.T[0], weights=selected_data.T[1], bins=bins)
+        yvals2, _ = np.histogram(selected_data.T[0], weights=selected_data.T[2], bins=bins)
+
+        # reformat binned data
+        # for uncertainties, see https://www.zeuthen.desy.de/~wischnew/amanda/discussion/wgterror/working.html
+        xvals = (bins[:-1] + bins[1:]) / 2.
+        binned_data = np.array([xvals, yvals, np.sqrt(yvals2)])
+
+        return binned_data
+    
+
+    def plot_histogram(self, dataset, logx=False, logy=False, xlim=None, ylim=None, xlabel="Observable", filename=None):
+        
+        # prepare plot
+        matplotlib.rcParams.update({'font.size': 14})
+        fig = plt.figure(figsize=(8,6))
+        
+        # plot binned data
+        ax = plt.subplot(1,1,1)
+        for data, color, label in dataset:
+            for x,y,yerr in data.T: ax.errorbar(x, y, yerr=yerr, fmt='.', color=color)
+            ax.scatter(data.T[0][0], data.T[0][1], color=color, label=label, marker='.')
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Expected Event Rate [fb/bin]")
+        if logx: ax.set_xscale("log")
+        if logy: ax.set_yscale("log")
+        if xlim is not None: ax.set_xlim(xlim[0], xlim[1])
+        if ylim is not None: ax.set_ylim(ylim[0], ylim[1])
+
+        # finalize
+        ax.legend(frameon=False, labelspacing=0, fontsize=13)
+        ax.grid()
+        if filename is not None: fig.savefig(filename)
+        plt.show()
+
+    ########################################################
+    # Binning
+    ########################################################
+    
+    
+    
+
+    def binCalEnergy(self, particle, bins = None, requirement=None, weighted=True):
+
+        #check particle type:
+        if particle not in ['muon', 'nu_mu', 'nu_el']:
+            print ("particle must be either 'muon', 'nu_mu' or 'nu_el'")
+            return 1
+        
+        if particle == 'muon':
+            data = self.muon_data
+        elif particle == 'nu_mu':
+            data = self.numu_data
+        elif particle == 'nu_el':
+            data = self.nuel_data
+        
+        func = eval('lambda event: ' + requirement)
+        matches = [event for event in data if func(event)]
+        if bins is None:
+            deposits = [event['calorimeter'] for event in matches]
+            minDep = min(deposits) - 1
+            maxDep = max(deposits) + 1
+            low = np.log10(max(10**-2, minDep)) # Sets 0.01 as the smallest bin
+            high = max(3, np.log10(maxDep))     # Sets 1000 as the largest bin
+            bins = np.logspace(low, high, 100)
+
+        primEnergies = sorted(set([event['primaryEnergy'] for event in matches]))
+
+        binned = {'bins': bins}
+
+        for energy in primEnergies:
+            subdata = [(event['calorimeter'], event['weight']) for event in matches if event['primaryEnergy'] == energy]
+            cals    = [x[0] for x in subdata]
+            weights = [x[1] for x in subdata]
+
+            counts = np.zeros(np.size(bins))
+            uncertainties = np.zeros(np.size(bins))
+            for weight in set(weights):
+                mask = weights == weight
+
+                cal = np.array(cals)[mask]
+                ids = np.searchsorted(bins,cal)
+
+                count = np.zeros(np.size(bins))
+                raw_count = np.zeros(np.size(bins))
+                for id_ in ids:
+                    raw_count[id_] += 1
+                    count[id_]     += weight
+                    
+                if weighted:
+                    counts += count
+                    mask = raw_count > 0
+                    uncertainties[mask] += count[mask] / np.sqrt(raw_count[mask])
+                else:
+                    counts += raw_count
+                    uncertainties += np.sqrt(raw_count)
+
+            binned[energy] = (counts, uncertainties)
+
+        return binned
+    
+    def sumCalEnergyBins(self, particle, bins = None, requirement = None, weighted = True, primaryEnergies = None):
+        
+        data = self.binCalEnergy(particle, bins, requirement, weighted)
+        
+        if primaryEnergies is None:
+            primaryEnergies = [key for key in data.keys() if isinstance(key,float)]
+        
+        bins = data['bins']
+        counts = np.zeros(np.shape(bins))
+        uncertainties = np.zeros(np.shape(bins))
+        for energy in primaryEnergies:
+            counts += data[energy][0]
+            uncertainties += data[energy][1]
+        
+        return bins, counts, uncertainties
+    
+    ########################################################
+    # Count events after cuts
+    ########################################################
+    
+    def countEvents(self, particle, requirement="True"):
+        
+        #check particle type:
+        if particle not in ['muon', 'nu_mu', 'nu_el']:
+            print ("particle must be either 'muon', 'nu_mu' or 'nu_el'")
+            return 0
+        
+        if particle == 'muon':
+            data = self.muon_data
+        elif particle == 'nu_mu':
+            data = self.numu_data
+        elif particle == 'nu_el':
+            data = self.nuel_data
+        
+        func = eval('lambda event: ' + requirement)
+        return len([True for event in data if func(event)])
+    
+    def integrateCounts(self, particle, calEnergies, requirement="True", weighted = True):
+    
+        #check particle type:
+        if particle not in ['muon', 'nu_mu', 'nu_el']:
+            print ("particle must be either 'muon', 'nu_mu' or 'nu_el'")
+            return 0
+        
+        if particle == 'muon':
+            data = self.muon_data
+        elif particle == 'nu_mu':
+            data = self.numu_data
+        elif particle == 'nu_el':
+            data = self.nuel_data
+        
+        func = eval('lambda event : ' + requirement)
+        # Apply an early cut with the scintillator cut so we don't search the same events repeatedly
+        subdata = [(event['calorimeter'], event['weight']) for event in data
+                   if func(event) and
+                      event['calorimeter'] > min(calEnergies)]
+
+        raw_counts = [len(subdata)]
+        weighted_counts = [np.sum([w for (e, w) in subdata])]
+
+        # Sort and pop off minimum energy since cut was already made
+        calEnergies = sorted(calEnergies)
+        calEnergies = calEnergies[1:]
+
+        for energy in calEnergies:
+            subdata = [(e,w) for (e,w) in subdata if e > energy]
+            raw_counts.append(len(subdata))
+            weighted_counts.append(np.sum([w for (e, w) in subdata]))
+
+        raw_counts = np.array(raw_counts)
+        weighted_counts = np.array(weighted_counts)
+        if weighted:
+            mask = raw_counts > 0
+            counts = weighted_counts
+            uncertainties = np.zeros(np.shape(counts))
+            uncertainties[mask] = counts[mask] / np.sqrt(raw_counts[mask])
+            return weighted_counts, uncertainties
+        else:
+            return raw_counts, np.sqrt(raw_counts)
