@@ -522,7 +522,7 @@ class Analyzer():
         if filename is not None: fig.savefig(filename)
         plt.show()
 
-    def plot_2dhistogram_primary(observable, bins, requirement=None,
+    def plot_2dhistogram_primary(self, observable, bins, requirement=None,
         label="Observable", log=False, filename=None ):
     
         # check if data exists:
@@ -537,10 +537,10 @@ class Analyzer():
         
         # loop through events
         selected_data_s, selected_data_b = [], []
-        for event in analyser.numu_data:
+        for event in self.numu_data:
             if eval(requirement) == False: continue
             selected_data_s.append([event['primaryEnergy'], event[observable], event['weight']])
-        for event in analyser.muon_data:
+        for event in self.muon_data:
             if eval(requirement) == False: continue
             selected_data_b.append([event['primaryEnergy'], event[observable], event['weight']])
         selected_data_s = np.array(selected_data_s)
