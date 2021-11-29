@@ -358,18 +358,20 @@ class Analyzer():
     ########################################################
     # Observables
     ########################################################
-    
-    def define_observable(self, name, definition):
-        for event in self.muon_data: event[name] = eval(definition)
-        for event in self.numu_data: event[name] = eval(definition)
-        for event in self.nuel_data: event[name] = eval(definition)
 
     def define_observable_from_function(self, name, function):
         for event in self.muon_data: event[name] = function(event)
         for event in self.numu_data: event[name] = function(event)
         for event in self.nuel_data: event[name] = function(event)
+
+    def define_observable(self, name, definition):
+        self.define_observable_from_function(name,
+                eval('lambda event : ' + definition))
+#         for event in self.muon_data: event[name] = eval(definition)
+#         for event in self.numu_data: event[name] = eval(definition)
+#         for event in self.nuel_data: event[name] = eval(definition)
     
-    def get_histodata(self, particle, observable, bins=None, requirement=None):
+    def get_histodata(self, particle, observable, bins=None, requirement="True"):
     
         #check particle type, assign data:
         particles = {'muon': self.muon_data, 'numu': self.numu_data, 'nuel': self.nuel_data}
@@ -377,12 +379,26 @@ class Analyzer():
         else: print ("Error: particle must be either 'muon', 'numu' or 'nuel'")
         
         # loop through events
-        selected_data = []
-        for event in data:
-            if eval(requirement) == False: continue
-            value = event[observable]
-            weight = event['weight']
-            selected_data.append([value, weight, weight*weight])
+        
+        # Writing requirement as a lambda function runs much faster (~5x)
+        # - I presume this has to do with interpretting the string as code
+        #   before running the loop rather than looping and then intrepetting
+        #   the string as code each iteration
+        func = eval('lambda event : ' + requirement)
+
+#         selected_data = []
+#         for event in data:
+#             if func(event) == False: continue
+#             value = event[observable]
+#             weight = event['weight']
+#             selected_data.append([value, weight, weight*weight])
+#         selected_data = np.array(selected_data)
+
+        # Python's List comprehension is faster than looping when appending
+        selected_data = [[event[observable],
+                          event['weight'],
+                          event['weight']**2]
+                             for event in data if func(event)]
         selected_data = np.array(selected_data)
 
         # bin data get sum of weights, and squared sum of weights for each bin
@@ -487,7 +503,7 @@ class Analyzer():
 
         return binned
     
-    def sumCalEnergyBins(self, particle, bins = None, requirement = None, weighted = True, primaryEnergies = None):
+    def sumCalEnergyBins(self, particle, bins = None, requirement="True", weighted = True, primaryEnergies = None):
         
         data = self.binCalEnergy(particle, bins, requirement, weighted)
         
