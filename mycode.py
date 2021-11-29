@@ -421,6 +421,144 @@ class Analyzer():
         if filename is not None: fig.savefig(filename)
         plt.show()
 
+
+    def plot_2dhistogram(self,
+        observable1, observable2,
+        bins1, bins2,
+        requirement=None,
+        xlabel="Observable1", ylabel="Observable2",
+        logx=False, logy=False,
+        filename=None
+    ):
+
+        # check if data exists:
+        if len(self.numu_data)==0: print ("Error: no numu signal data")
+        if len(self.muon_data)==0: print ("Error: no muon background data")
+
+        # prepare plot
+        matplotlib.rcParams.update({'font.size': 14})
+        fig = plt.figure(figsize=(8*3,6))
+        
+        # loop through events
+        selected_data_s, selected_data_b = [], []
+        for event in self.numu_data:
+            if eval(requirement) == False: continue
+            selected_data_s.append([event[observable1], event[observable2], event['weight']])
+        for event in self.muon_data:
+            if eval(requirement) == False: continue
+            selected_data_b.append([event[observable1], event[observable2], event['weight']])
+        selected_data_s = np.array(selected_data_s)
+        selected_data_b = np.array(selected_data_b)
+        
+        # plot signal data
+        ax = plt.subplot(1,3,1)
+        hs = ax.hist2d(
+            selected_data_s.T[0], selected_data_s.T[1], weights=selected_data_s.T[2],
+            bins=[bins1,bins2], range=[[bins1[0], bins1[-1]],[bins2[0], bins2[-1]]],
+            norm=matplotlib.colors.LogNorm(),cmap='jet',
+        )
+        plt.colorbar(hs[3])
+        ax.set_title("Muon Neutrino [fb/bin")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        if logx: ax.set_xscale("log")
+        if logy: ax.set_yscale("log")
+                   
+        ax = plt.subplot(1,3,2)
+        hb = ax.hist2d(
+            selected_data_b.T[0], selected_data_b.T[1], weights=selected_data_b.T[2],
+            bins=[bins1,bins2], range=[[bins1[0], bins1[-1]],[bins2[0], bins2[-1]]],
+            norm=matplotlib.colors.LogNorm(),cmap='jet',
+        )
+        plt.colorbar(hb[3])
+        ax.set_title("Muons [fb/bin]")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        if logx: ax.set_xscale("log")
+        if logy: ax.set_yscale("log")
+                   
+        selected_data_r = []
+        vmin, vmax = 10e10,0
+        for ix in range(len(bins1)-1):
+            x = (bins1[ix+1]+bins1[ix])/2.
+            for iy in range(len(bins2)-1):
+                y = (bins2[iy+1]+bins2[iy])/2.
+                if hb[0][ix][iy]==0: r = 0
+                else: r=hs[0][ix][iy]/hb[0][ix][iy]
+                selected_data_r.append([x,y,r])
+                if r>0 and r<vmin: vmin=r
+                if r>vmax: vmax=r
+        selected_data_r = np.array(selected_data_r)
+
+        ax = plt.subplot(1,3,3)
+        hr = ax.hist2d(
+            selected_data_r.T[0], selected_data_r.T[1], weights=selected_data_r.T[2],
+            bins=[bins1,bins2], range=[[bins1[0], bins1[-1]],[bins2[0], bins2[-1]]],
+            norm=matplotlib.colors.LogNorm(vmin=vmin,vmax=vmax),cmap='jet',
+        )
+        plt.colorbar(hr[3])
+        ax.set_title("Ratio: Muon Neutrino / Muon")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        if logx: ax.set_xscale("log")
+        if logy: ax.set_yscale("log")
+    
+        if filename is not None: fig.savefig(filename)
+        plt.show()
+
+    def plot_2dhistogram_primary(observable, bins, requirement=None,
+        label="Observable", log=False, filename=None ):
+    
+        # check if data exists:
+        if len(analyser.numu_data)==0: print ("Error: no numu signal data")
+        if len(analyser.muon_data)==0: print ("Error: no muon background data")
+        
+        # prepare plot
+        matplotlib.rcParams.update({'font.size': 14})
+        fig = plt.figure(figsize=(8*2,6))
+        bins_b = np.linspace(0,3600,18+1)
+        bins_s = np.logspace(1,4,30+1)
+        
+        # loop through events
+        selected_data_s, selected_data_b = [], []
+        for event in analyser.numu_data:
+            if eval(requirement) == False: continue
+            selected_data_s.append([event['primaryEnergy'], event[observable], event['weight']])
+        for event in analyser.muon_data:
+            if eval(requirement) == False: continue
+            selected_data_b.append([event['primaryEnergy'], event[observable], event['weight']])
+        selected_data_s = np.array(selected_data_s)
+        selected_data_b = np.array(selected_data_b)
+
+        # plot signal data
+        ax = plt.subplot(1,2,1)
+        hs = ax.hist2d(
+            selected_data_s.T[0], selected_data_s.T[1], weights=selected_data_s.T[2],
+            bins=[bins_s,bins], range=[[bins_s[0], bins_s[-1]],[bins[0], bins[-1]]],
+            norm=matplotlib.colors.LogNorm(),cmap='jet',
+        )
+        plt.colorbar(hs[3])
+        ax.set_title("Muon Neutrino [fb/bin")
+        ax.set_xlabel('Neutrino Energy [GeV]')
+        ax.set_ylabel(label)
+        ax.set_xscale("log")
+        if log: ax.set_yscale("log")
+                   
+        ax = plt.subplot(1,2,2)
+        hb = ax.hist2d(
+            selected_data_b.T[0], selected_data_b.T[1], weights=selected_data_b.T[2],
+            bins=[bins_b,bins], range=[[bins_b[0], bins_b[-1]],[bins[0], bins[-1]]],
+            norm=matplotlib.colors.LogNorm(),cmap='jet',
+        )
+        plt.colorbar(hb[3])
+        ax.set_title("Muons [fb/bin]")
+        ax.set_xlabel('Muon Energy [GeV]')
+        ax.set_ylabel(label)
+        if log: ax.set_yscale("log")
+                   
+        if filename is not None: fig.savefig(filename)
+        plt.show()
+    
     ########################################################
     # Binning
     ########################################################
