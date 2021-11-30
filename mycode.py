@@ -7,6 +7,10 @@ import matplotlib.image as img
 import random
 import time
 
+from scipy.stats import poisson
+from scipy.stats import norm
+from scipy.integrate  import simpson
+
 from os import listdir
 import re
 
@@ -576,92 +580,10 @@ class Analyzer():
         plt.show()
     
     ########################################################
-    # Binning
-    ########################################################
-    
-    
-    
-
-    def binCalEnergy(self, particle, bins = None, requirement=None, weighted=True):
-
-        #check particle type:
-        if particle not in ['muon', 'nu_mu', 'nu_el']:
-            print ("particle must be either 'muon', 'nu_mu' or 'nu_el'")
-            return 1
-        
-        if particle == 'muon':
-            data = self.muon_data
-        elif particle == 'nu_mu':
-            data = self.numu_data
-        elif particle == 'nu_el':
-            data = self.nuel_data
-        
-        func = eval('lambda event: ' + requirement)
-        matches = [event for event in data if func(event)]
-        if bins is None:
-            deposits = [event['calorimeter'] for event in matches]
-            minDep = min(deposits) - 1
-            maxDep = max(deposits) + 1
-            low = np.log10(max(10**-2, minDep)) # Sets 0.01 as the smallest bin
-            high = max(3, np.log10(maxDep))     # Sets 1000 as the largest bin
-            bins = np.logspace(low, high, 100)
-
-        primEnergies = sorted(set([event['primaryEnergy'] for event in matches]))
-
-        binned = {'bins': bins}
-
-        for energy in primEnergies:
-            subdata = [(event['calorimeter'], event['weight']) for event in matches if event['primaryEnergy'] == energy]
-            cals    = [x[0] for x in subdata]
-            weights = [x[1] for x in subdata]
-
-            counts = np.zeros(np.size(bins))
-            uncertainties = np.zeros(np.size(bins))
-            for weight in set(weights):
-                mask = weights == weight
-
-                cal = np.array(cals)[mask]
-                ids = np.searchsorted(bins,cal)
-
-                count = np.zeros(np.size(bins))
-                raw_count = np.zeros(np.size(bins))
-                for id_ in ids:
-                    raw_count[id_] += 1
-                    count[id_]     += weight
-                    
-                if weighted:
-                    counts += count
-                    mask = raw_count > 0
-                    uncertainties[mask] += count[mask] / np.sqrt(raw_count[mask])
-                else:
-                    counts += raw_count
-                    uncertainties += np.sqrt(raw_count)
-
-            binned[energy] = (counts, uncertainties)
-
-        return binned
-    
-    def sumCalEnergyBins(self, particle, bins = None, requirement="True", weighted = True, primaryEnergies = None):
-        
-        data = self.binCalEnergy(particle, bins, requirement, weighted)
-        
-        if primaryEnergies is None:
-            primaryEnergies = [key for key in data.keys() if isinstance(key,float)]
-        
-        bins = data['bins']
-        counts = np.zeros(np.shape(bins))
-        uncertainties = np.zeros(np.shape(bins))
-        for energy in primaryEnergies:
-            counts += data[energy][0]
-            uncertainties += data[energy][1]
-        
-        return bins, counts, uncertainties
-    
-    ########################################################
     # Count events after cuts
     ########################################################
     
-    def countEvents(self, particle, requirement="True"):
+    def count_events(self, particle, requirement="True"):
         
         #check particle type:
         if particle not in ['muon', 'nu_mu', 'nu_el']:
@@ -676,47 +598,61 @@ class Analyzer():
             data = self.nuel_data
         
         func = eval('lambda event: ' + requirement)
-        return len([True for event in data if func(event)])
-    
-    def integrateCounts(self, particle, calEnergies, requirement="True", weighted = True):
-    
-        #check particle type:
-        if particle not in ['muon', 'nu_mu', 'nu_el']:
-            print ("particle must be either 'muon', 'nu_mu' or 'nu_el'")
-            return 0
+        weights = [event['weight'] for event in data if func(event)]
+        weights = np.array(weights)
         
-        if particle == 'muon':
-            data = self.muon_data
-        elif particle == 'nu_mu':
-            data = self.numu_data
-        elif particle == 'nu_el':
-            data = self.nuel_data
+        count = np.sum(weights)
+        error = np.sqrt(np.sum(weights ** 2))
         
-        func = eval('lambda event : ' + requirement)
-        # Apply an early cut with the scintillator cut so we don't search the same events repeatedly
-        subdata = [(event['calorimeter'], event['weight']) for event in data
-                   if func(event) and
-                      event['calorimeter'] > min(calEnergies)]
+        return count, error
+    
 
-        raw_counts = [len(subdata)]
-        weighted_counts = [np.sum([w for (e, w) in subdata])]
+    def calculate_stats(self, requirement="True", LHCscale = 1):
+        
+        def integrate_with_gaussian(f, mu, sigma):
+            if sigma <= 0:
+                return f
+            xvals = np.linspace(mu - 10 * sigma, mu + 10 * sigma)
+            yvals = f * norm.pdf((xvals-mu)/sigma) / sigma
+            return simpson(yvals, xvals)
+    
+        analysis = {}
 
-        # Sort and pop off minimum energy since cut was already made
-        calEnergies = sorted(calEnergies)
-        calEnergies = calEnergies[1:]
+        bkg_mean, bkg_err = self.count_events(particle='muon',
+                                    requirement=requirement)
+        sig_mean, sig_err = self.count_events(particle='nu_mu',
+                                    requirement=requirement)
+        if len(self.nuel_data) > 0:
+            nue_mean, nue_err = self.count_events(particle='nu_el',
+                                        requirement=requirement)
+            sig_mean += nue_mean
+            sig_err  += nue_err
 
-        for energy in calEnergies:
-            subdata = [(e,w) for (e,w) in subdata if e > energy]
-            raw_counts.append(len(subdata))
-            weighted_counts.append(np.sum([w for (e, w) in subdata]))
+        sig_mean *= LHCscale
+        sig_err *= LHCscale
+        bkg_mean *= LHCscale
+        bkg_err *= LHCscale
 
-        raw_counts = np.array(raw_counts)
-        weighted_counts = np.array(weighted_counts)
-        if weighted:
-            mask = raw_counts > 0
-            counts = weighted_counts
-            uncertainties = np.zeros(np.shape(counts))
-            uncertainties[mask] = counts[mask] / np.sqrt(raw_counts[mask])
-            return weighted_counts, uncertainties
-        else:
-            return raw_counts, np.sqrt(raw_counts)
+        analysis['signal']     = (sig_mean, sig_err)
+        analysis['background'] = (bkg_mean, bkg_err)
+
+        x_max = int(np.round(sig_mean + sig_err + bkg_mean + bkg_err))
+
+
+        p_func  = lambda x,y : integrate_with_gaussian(poisson.pmf(x,y), bkg_mean, bkg_err)
+
+        xvals   = list(range(5*x_max))
+        p_xvals = [p_func(n,bkg_mean) for n in xvals]
+        pvals   = [sum(p_xvals[n:]) for n in xvals]
+
+        BF_func = lambda x, y : p_func(x, bkg_mean + y)
+        BF = [pvals[n] / integrate_with_gaussian(BF_func(n, sig_mean), sig_mean, sig_err) for n in xvals]
+
+        analysis['x-values'] = xvals
+        analysis['p-values'] = pvals
+        analysis['Bayes Factors'] = BF
+
+        analysis['p-expected'] = sum([pvals[n] * poisson.pmf(n, sig_mean + bkg_mean) for n in xvals])
+        analysis['BF-expected'] = sum([BF[n] * poisson.pmf(n, sig_mean + bkg_mean) for n in xvals])
+
+        return analysis
