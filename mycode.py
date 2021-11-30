@@ -9,7 +9,7 @@ import time
 
 from scipy.stats import poisson
 from scipy.stats import norm
-from scipy.integrate  import simpson
+from scipy.integrate import simps
 
 from os import listdir
 import re
@@ -585,59 +585,49 @@ class Analyzer():
     
     def count_events(self, particle, requirement="True"):
         
-        #check particle type:
-        if particle not in ['muon', 'nu_mu', 'nu_el']:
-            print ("particle must be either 'muon', 'nu_mu' or 'nu_el'")
+        # check particle type:
+        if particle not in ['muon', 'numu', 'nuel']:
+            print ("particle must be either 'muon', 'numu' or 'nuel'")
             return 0
         
-        if particle == 'muon':
-            data = self.muon_data
-        elif particle == 'nu_mu':
-            data = self.numu_data
-        elif particle == 'nu_el':
-            data = self.nuel_data
+        # asign data
+        if particle == 'muon':   data = self.muon_data
+        elif particle == 'numu': data = self.numu_data
+        elif particle == 'nuel': data = self.nuel_data
         
+        # evaulate weights and check requirements
         func = eval('lambda event: ' + requirement)
         weights = [event['weight'] for event in data if func(event)]
         weights = np.array(weights)
         
+        # obtain count and error
         count = np.sum(weights)
         error = np.sqrt(np.sum(weights ** 2))
         
         return count, error
     
 
-    def calculate_stats(self, requirement="True", LHCscale = 1):
+    def calculate_stats(self, requirement="True", luminosity = 1):
         
         def integrate_with_gaussian(f, mu, sigma):
-            if sigma <= 0:
-                return f
+            if sigma <= 0: return f
             xvals = np.linspace(mu - 10 * sigma, mu + 10 * sigma)
             yvals = f * norm.pdf((xvals-mu)/sigma) / sigma
-            return simpson(yvals, xvals)
-    
-        analysis = {}
+            return simps(yvals, xvals)
 
-        bkg_mean, bkg_err = self.count_events(particle='muon',
-                                    requirement=requirement)
-        sig_mean, sig_err = self.count_events(particle='nu_mu',
-                                    requirement=requirement)
-        if len(self.nuel_data) > 0:
-            nue_mean, nue_err = self.count_events(particle='nu_el',
-                                        requirement=requirement)
-            sig_mean += nue_mean
-            sig_err  += nue_err
+        # get signal and background rate
+        muon_mean, muon_err = self.count_events(particle='muon', requirement=requirement)
+        numu_mean, numu_err = self.count_events(particle='numu', requirement=requirement)
+        nuel_mean, nuel_err = self.count_events(particle='nuel', requirement=requirement)
 
-        sig_mean *= LHCscale
-        sig_err *= LHCscale
-        bkg_mean *= LHCscale
-        bkg_err *= LHCscale
-
-        analysis['signal']     = (sig_mean, sig_err)
-        analysis['background'] = (bkg_mean, bkg_err)
+        bkg_mean, bkg_err = muon_mean, muon_err
+        sig_mean, sig_err = numu_mean + nuel_mean, np.sqrt(numu_err**2+nuel_err**2)
+        
+        # multiply luminosity
+        sig_mean, sig_err = sig_mean*luminosity, sig_err*luminosity
+        bkg_mean, bkg_err = bkg_mean*luminosity, bkg_err*luminosity
 
         x_max = int(np.round(sig_mean + sig_err + bkg_mean + bkg_err))
-
 
         p_func  = lambda x,y : integrate_with_gaussian(poisson.pmf(x,y), bkg_mean, bkg_err)
 
@@ -648,6 +638,11 @@ class Analyzer():
         BF_func = lambda x, y : p_func(x, bkg_mean + y)
         BF = [pvals[n] / integrate_with_gaussian(BF_func(n, sig_mean), sig_mean, sig_err) for n in xvals]
 
+        # summarize results
+        analysis = {}
+        analysis['nsignal']     = (sig_mean*luminosity, sig_err*luminosity)
+        analysis['nbackground'] = (bkg_mean*luminosity, bkg_err*luminosity)
+        
         analysis['x-values'] = xvals
         analysis['p-values'] = pvals
         analysis['Bayes Factors'] = BF
