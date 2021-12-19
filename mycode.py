@@ -113,7 +113,7 @@ class Analyzer():
             
             event['weight'] = weight[0] # Method with the mask returns a numpy array with one-element
 
-    def weight_muons(self, files):
+    def weight_muons(self, files, veto):
         
         data = np.array([])
         
@@ -133,9 +133,11 @@ class Analyzer():
         
         A_lr = 6.5 * 35 # left/right simulation area in cm^2
         A_tb = 43  * 4 # top/bot simulation area in cm^2
-        
+        A_c = 35 * 30 # center cimulation area in cm^2
+
         expTot_lr = expFlu * A_lr
         expTot_tb = expFlu * A_tb
+        expTot_c = expFlu * A_c * veto
         
         # Number simulated in each region for each input file
         simTot = self.countSimTotals(files)
@@ -150,6 +152,8 @@ class Analyzer():
                 expTot = expTot_lr
             elif (side == 'top') or (side == 'bot'):
                 expTot = expTot_tb
+            elif (side == 'center'):
+                expTot = expTot_c
             
             # Add the appropriate weight to each event
             for event in tmp:
@@ -180,6 +184,16 @@ class Analyzer():
                 else:
                     sideDict[energy] += 21527
             simTot[side] = sideDict
+        # Determine simTot for center
+        centerDict = {}
+        centerFile = [file for file in files if re.search(f'.*center.*', file)]
+        for file in centerFile:
+            energy = np.load('NumpyArrays/' + file, allow_pickle=True)[0]['primaryEnergy']
+            if not(energy in centerDict.keys()):
+                centerDict[energy] = 20000
+            else:
+                centerDict[energy] += 20000
+        simTot['center'] = centerDict
         
         return simTot
 
@@ -216,13 +230,13 @@ class Analyzer():
 
         print (' ... found', len(self.nuel_data), 'nue events in', round(time.time() - start_time,2), 'seconds')
 
-    def prepare_muon(self,):
+    def prepare_muon(self, veto=10**-6):
         # Prepare muon
         start_time = time.time()
         ls = listdir('NumpyArrays/')
 
         files = [file for file in ls if re.search(r'muons',file)]
-        self.muon_data = self.weight_muons(files)
+        self.muon_data = self.weight_muons(files, veto)
         
         print (' ... found', len(self.muon_data), 'muon events in', round(time.time() - start_time,2), 'seconds')
 
@@ -651,3 +665,165 @@ class Analyzer():
         analysis['BF-expected'] = sum([BF[n] * poisson.pmf(n, sig_mean + bkg_mean) for n in xvals])
 
         return analysis
+
+class Poisson_Analysis():
+    
+    def marg_like(self, No, Ns, Nb, db):
+        bs = np.linspace(max(Nb-10*db,0), Nb + 10*db, 200)
+        integrand = [poisson.pmf(No, Ns + b) * norm.pdf(b, Nb, db)
+                     for b in bs]
+        return simps(integrand, bs, axis=0)
+    
+    def __init__(self, Ns, Nb, db, alpha = 10**-8):
+        lo = int(np.floor(poisson.ppf(alpha*10**-6, Nb)))
+        hi = int(np.ceil(poisson.ppf(1-alpha*10**-6, Ns + Nb)))
+        No = np.arange(lo-1,hi+1)
+        
+        mus = np.linspace(0,3,301)
+        null_mask = mus == 0
+        alt_mask = mus == 1
+        
+        likes = [poisson.pmf(No, Nb + mu * Ns) for mu in mus]
+        pvals = [poisson.sf(No, Nb + mu * Ns) for mu in mus]
+        sig = [np.abs(norm.ppf(pval)) for pval in pvals]
+
+        marg_likes = [self.marg_like(No, mu*Ns, Nb, db) for mu in mus]
+        marg_pvals = [np.array([1-np.sum(like[:n]) for n in range(len(No))[1:]]) for like in marg_likes]
+        marg_sig = [np.abs(norm.ppf(pval)) for pval in marg_pvals]
+        
+        # Make everything a numpy array for good measure
+        likes = np.array(likes)
+        pvals = np.array(pvals)
+        sig = np.array(sig)
+        marg_likes = np.array(marg_likes)
+        marg_pvals = np.array(marg_pvals)
+        marg_sig = np.array(marg_sig)
+        
+        self.data = {'Ns' : Ns, 'Nb' : Nb, 'db' : db}
+        self.accuracy = alpha
+        self.mus = mus
+        self.No = No
+        self.likelihood = likes
+        self.pvals = pvals
+        self.significance = sig
+        self.marginal_likelihood = marg_likes
+        self.marginal_pvals = marg_pvals
+        self.marginal_significance = marg_sig
+        self.bayes_factor = likes[null_mask] / likes[alt_mask]
+        self.marginal_bayes_factor = marg_likes[null_mask] / marg_likes[alt_mask]
+        
+        pvals = pvals[null_mask]
+        sig   = sig[null_mask]
+        like1 = likes[alt_mask]
+        exp_pval = np.sum([p*like for (p,like) in zip(pvals, like1)])
+        exp_sig  = np.sum([s*like for (s,like) in zip(sig, like1)])
+        
+        marg_pvals = marg_pvals[null_mask]
+        marg_sig   = marg_sig[null_mask]
+        marg_like1 = marg_likes[alt_mask]
+        exp_marg_pval = np.sum([p*like[1:]
+                           for (p,like) in zip(marg_pvals, marg_like1)])
+        exp_marg_sig  = np.sum([s*like[1:]
+                           for (s,like) in zip(marg_sig, marg_like1)])
+        self.expected = {
+            'pval' : exp_pval,
+            'significance' : exp_sig,
+            'marginal_pval' : exp_marg_pval,
+            'marginal_significance' : exp_marg_sig
+        }
+
+    def plot_marginal_comparison(self):
+       
+        # Pull data from self
+        Ns    = self.data['Ns']
+        Nb    = self.data['Nb']
+        db    = self.data['db']
+        No = self.No
+        lo = No[0]+1
+        hi = No[len(No)-1]-1
+        like = self.likelihood
+        pvals_with_mus = self.pvals
+        marg_like = self.marginal_likelihood
+        marg_pval_with_mus = self.marginal_pvals
+        
+        # Setup variables for plotting 
+        alpha = self.accuracy
+        yticks = 10**np.arange(np.log10(alpha),0.1,2)
+        Zs = np.arange(1,8.1)
+        pval_sigmas = np.array([1-norm.cdf(Z) for Z in Zs])
+        Zs = Zs[pval_sigmas >= alpha]
+        pval_sigmas = pval_sigmas[pval_sigmas >= alpha]
+        zeros = np.zeros(np.shape(No))
+        
+        # Masks for extracting null and alternative hypotheses
+        mus = self.mus
+        null_mask = mus == 0
+        alt_mask  = mus == 1
+
+        #Setup variables for cleaner code
+        like0 = like[null_mask][0]
+        like1 = like[alt_mask][0]
+        pvals  = pvals_with_mus[null_mask][0]
+        
+        marg_like0 = marg_like[null_mask][0]
+        marg_like1 = marg_like[alt_mask][0]
+        marg_pvals = marg_pval_with_mus[null_mask][0]
+
+        matplotlib.rcParams.update({'font.size': 14})
+        fig = plt.figure(figsize=(8*2,6))
+
+        ax = plt.subplot(1,2,1)
+        
+        # Mark mean value of No
+        ax.plot([Ns + Nb, Ns + Nb], [alpha*10**-0.5,10**0.5], 'r--')
+        ax.text( Ns + Nb + 0.01*(hi-lo), 10**0.125, '$N_s + N_b$', color='red')
+        
+        # Plot null hypothesis likelihoods
+        ax.scatter(No, like0,
+                   color='blue', marker='<', s=16, label='$f(N_o, N_b)$')
+        ax.scatter(No, marg_like0,
+                   color='orange', marker='<', s=16, label='$f_\mathrm{marg}(N_o, N_b, \sigma_b)$')
+
+        # Plot alterative hypothesis likelihoods
+        ax.scatter(No, like1, color='blue', marker='>', s=16, label='$f(N_o, N_b + N_s)$')
+        ax.scatter(No, marg_like1, color='orange', marker='>', s=16, label='$f_\mathrm{marg}(N_o, N_s, N_b, \sigma_b)$')
+        for (Z,pval_sigma) in zip(Zs,pval_sigmas):
+            if pval_sigma >= alpha:
+                mask = pvals <= pval_sigma
+                ax.fill_between(No[mask], zeros[mask], like0[mask], color = 'blue', alpha=0.05)
+                ax.text(No[mask][0],alpha*10**-0.375,f'{int(Z)}$\sigma$', fontsize='x-small')
+
+                mask = np.append(False, marg_pvals <= pval_sigma)
+                ax.fill_between(No[mask], zeros[mask], marg_like0[mask], color = 'orange', alpha=0.05)
+
+        ax.legend(loc="upper right")
+
+        ax.set_xlabel('$N_o$')
+        ax.set_ylabel('Likelihood')
+        ax.set_xlim([lo,hi])
+        ax.set_ylim([alpha*10**-0.5,10**0.5])
+        ax.set_yscale('log')
+        ax.set_yticks(yticks);
+
+        ax = plt.subplot(1,2,2)
+        
+        # Mark mean value of No
+        ax.plot([Ns + Nb, Ns + Nb], [alpha*10**-0.5,10**0.5], 'r--')
+        ax.text(Ns+Nb+0.01*(hi-lo),10**0.125,'$N_s + N_b$', color='red')
+        
+        # Plot p-values
+        ax.scatter(No, pvals, s=8, label='$\hat{p}(N_o)$')
+        ax.scatter(No[1:], marg_pvals, s=8, label='$\hat{p}_\mathrm{marg}(N_o)$')
+        
+        # Mark p-values corresponding to significance levels
+        for (Z,pval_sigma) in zip(Zs,pval_sigmas):
+            ax.plot([lo-1, hi+1], [pval_sigma, pval_sigma], 'k--')
+            ax.text(hi-0.06*(hi-lo), pval_sigma*10**0.125, f'{int(Z)}$\sigma$')
+        ax.legend(loc="lower left")
+
+        ax.set_xlabel('$N_o$')
+        ax.set_ylabel('$p$-value')
+        ax.set_xlim([lo,hi])
+        ax.set_ylim([alpha*10**-0.5,10**0.5])
+        ax.set_yscale('log')
+        ax.set_yticks(yticks)
