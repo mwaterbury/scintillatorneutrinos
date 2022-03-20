@@ -455,6 +455,47 @@ class Analyzer():
         if filename is not None: fig.savefig(filename)
         plt.show()
 
+    def get_2dhistodata(self,
+        observable1, observable2,
+        bins1, bins2,
+        requirement=None,
+        include_nuel=True,
+    ):
+
+        # check if data exists:
+        if len(self.numu_data)==0: print ("Error: no numu signal data")
+        if len(self.muon_data)==0: print ("Error: no muon background data")
+
+        # prepare plot
+        matplotlib.rcParams.update({'font.size': 14})
+        fig = plt.figure(figsize=(8*3,6))
+        
+        # Faster implementation of code block below
+        func = eval('lambda event : ' + requirement)
+        selected_data_numu = [[event[observable1], event[observable2], event['weight']]
+                               for event in self.numu_data if func(event)]
+        selected_data_muon = [[event[observable1], event[observable2], event['weight']]
+                               for event in self.muon_data if func(event)]
+        selected_data_s = np.array(selected_data_numu)
+        selected_data_b = np.array(selected_data_muon)
+        
+        if include_nuel:
+            if len(self.nuel_data)==0: print ("Error: no nuel signal data")
+            selected_data_nuel = [[event[observable1], event[observable2], event['weight']]
+                       for event in self.nuel_data if func(event)]
+            selected_data_s = np.append(selected_data_s,np.array(selected_data_nuel),0)
+
+        # loop through events
+#         selected_data_s, selected_data_b = [], []
+#         for event in self.numu_data:
+#             if eval(requirement) == False: continue
+#             selected_data_s.append([event[observable1], event[observable2], event['weight']])
+#         for event in self.muon_data:
+#             if eval(requirement) == False: continue
+#             selected_data_b.append([event[observable1], event[observable2], event['weight']])
+#         selected_data_s = np.array(selected_data_s)
+#         selected_data_b = np.array(selected_data_b)
+        return selected_data_s, selected_data_b
 
     def plot_2dhistogram(self,
         observable1, observable2,
@@ -483,13 +524,14 @@ class Analyzer():
             selected_data_b.append([event[observable1], event[observable2], event['weight']])
         selected_data_s = np.array(selected_data_s)
         selected_data_b = np.array(selected_data_b)
+        vmax = np.max(selected_data_b)
         
         # plot signal data
         ax = plt.subplot(1,3,1)
         hs = ax.hist2d(
             selected_data_s.T[0], selected_data_s.T[1], weights=selected_data_s.T[2],
             bins=[bins1,bins2], range=[[bins1[0], bins1[-1]],[bins2[0], bins2[-1]]],
-            norm=matplotlib.colors.LogNorm(),cmap='jet',
+            norm=matplotlib.colors.LogNorm(vmax = vmax),cmap='jet',
         )
         plt.colorbar(hs[3])
         ax.set_title("Muon Neutrino [fb/bin")
@@ -502,7 +544,7 @@ class Analyzer():
         hb = ax.hist2d(
             selected_data_b.T[0], selected_data_b.T[1], weights=selected_data_b.T[2],
             bins=[bins1,bins2], range=[[bins1[0], bins1[-1]],[bins2[0], bins2[-1]]],
-            norm=matplotlib.colors.LogNorm(),cmap='jet',
+            norm=matplotlib.colors.LogNorm(vmax = vmax),cmap='jet',
         )
         plt.colorbar(hb[3])
         ax.set_title("Muons [fb/bin]")
@@ -563,16 +605,18 @@ class Analyzer():
             selected_data_b.append([event['primaryEnergy'], event[observable], event['weight']])
         selected_data_s = np.array(selected_data_s)
         selected_data_b = np.array(selected_data_b)
+        
+        vmax = np.max(selected_data_b)
 
         # plot signal data
         ax = plt.subplot(1,2,1)
         hs = ax.hist2d(
             selected_data_s.T[0], selected_data_s.T[1], weights=selected_data_s.T[2],
             bins=[bins_s,bins], range=[[bins_s[0], bins_s[-1]],[bins[0], bins[-1]]],
-            norm=matplotlib.colors.LogNorm(),cmap='jet',
+            norm=matplotlib.colors.LogNorm(vmax = vmax),cmap='jet',
         )
         plt.colorbar(hs[3])
-        ax.set_title("Muon Neutrino [fb/bin")
+        ax.set_title("Muon Neutrino [fb/bin]")
         ax.set_xlabel('Neutrino Energy [GeV]')
         ax.set_ylabel(label)
         ax.set_xscale("log")
@@ -582,7 +626,7 @@ class Analyzer():
         hb = ax.hist2d(
             selected_data_b.T[0], selected_data_b.T[1], weights=selected_data_b.T[2],
             bins=[bins_b,bins], range=[[bins_b[0], bins_b[-1]],[bins[0], bins[-1]]],
-            norm=matplotlib.colors.LogNorm(),cmap='jet',
+            norm=matplotlib.colors.LogNorm(vmax = vmax),cmap='jet',
         )
         plt.colorbar(hb[3])
         ax.set_title("Muons [fb/bin]")
