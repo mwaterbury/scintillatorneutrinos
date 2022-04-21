@@ -54,8 +54,8 @@ class Analyzer():
         leadWeight = volLead/volFlu * rhoLead/rhoTung
         
         # Weight per primary
-        numSimTung = 13 * 1000
-        numSimLead = 5 * 1000
+        numSimTung = 53 * 200
+        numSimLead = 5 * 200
         
         # Simulation energies are close to those in FASER_-14.txt
         # Use a small buffer to ensure there is a match
@@ -94,8 +94,8 @@ class Analyzer():
         leadWeight = volLead/volFlu * rhoLead/rhoTung
         
         # Weight per primary
-        numSimTung = 13 * 300
-        numSimLead = 5 * 300
+        numSimTung = 53 * 50
+        numSimLead = 5 * 50
         
         # Simulation energies are close to those in FASER_-14.txt
         # Use a small buffer to ensure there is a match
@@ -196,6 +196,20 @@ class Analyzer():
         simTot['center'] = centerDict
         
         return simTot
+    
+    def fix_tracker_layers(self, event):
+        for layer in ['hits1','hits2','hits3','hits4']:
+            image = event[layer]
+            size = 25
+            hits_fixed = []
+            for x, y, n in image:
+                cell = (y + 12) * 25 + (x+12)
+                x = (cell - 1) % size
+                y = int(np.floor(cell /size))
+                x = x - 12
+                y = y - 12
+                hits_fixed.append([x,y,n])
+            event[layer] = np.array(hits_fixed)
 
     def prepare_numu(self,):
         
@@ -211,6 +225,7 @@ class Analyzer():
             np.save('NumpyArrays/' + file, tmp)
             
             self.numu_data = np.append(self.numu_data, tmp)
+        [self.fix_tracker_layers(event) for event in self.numu_data]
 
         print (' ... found', len(self.numu_data), 'numu events in', round(time.time() - start_time,2), 'seconds')
 
@@ -227,6 +242,7 @@ class Analyzer():
             np.save('NumpyArrays/' + file, tmp)
             
             self.nuel_data = np.append(self.nuel_data, tmp)
+        [self.fix_tracker_layers(event) for event in self.nuel_data]
 
         print (' ... found', len(self.nuel_data), 'nue events in', round(time.time() - start_time,2), 'seconds')
 
@@ -237,6 +253,7 @@ class Analyzer():
 
         files = [file for file in ls if re.search(r'muons',file)]
         self.muon_data = self.weight_muons(files, veto)
+        [self.fix_tracker_layers(event) for event in self.muon_data]
         
         print (' ... found', len(self.muon_data), 'muon events in', round(time.time() - start_time,2), 'seconds')
 
@@ -371,6 +388,7 @@ class Analyzer():
                 event = self.nuel_data[ievent]
                 if eval(requirement): found=True
         self.display_event(event,filename=filename)
+        return ievent
 
     
     ########################################################
