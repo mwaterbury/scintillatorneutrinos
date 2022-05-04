@@ -166,6 +166,11 @@ class Analyzer():
                 numExp = expTot[mask]
                 # weight = number expected / number simulated
                 event['weight'] = numExp[0] / simTotCur # Weight for 1 fb^-1 run at the LHC
+                
+                if side == 'center':
+                    event['location'] = 'center'
+                else:
+                    event['location'] = 'side'
             
             data = np.append(data,tmp)
         
