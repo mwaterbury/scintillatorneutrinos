@@ -36,8 +36,8 @@ class Analyzer():
     def weight_muon_neutrinos(self,data):
     
         # Import data for the number of expected muon neutrino interactions during run 3
-        expectedData1 = np.loadtxt('FluenceFiles/FASER_-14.txt')
-        expectedData2 = np.loadtxt('FluenceFiles/FASER_14.txt')
+        expectedData1 = np.loadtxt('FluenceFiles/FASER_CCint_avg_-14.txt')
+        expectedData2 = np.loadtxt('FluenceFiles/FASER_CCint_avg_14.txt')
         
         expEnergy = expectedData1[:,0]
         expTotal  = (expectedData1[:,1] + expectedData2[:,1]) / 150 # To normalize to 1 fb^-1
@@ -76,8 +76,8 @@ class Analyzer():
     def weight_elec_neutrinos(self, data):
         
         # Import data for the number of expected muon neutrino interactions during run 3
-        expectedData1 = np.loadtxt('FluenceFiles/FASER_-12.txt')
-        expectedData2 = np.loadtxt('FluenceFiles/FASER_12.txt')
+        expectedData1 = np.loadtxt('FluenceFiles/FASER_CCint_avg_-12.txt')
+        expectedData2 = np.loadtxt('FluenceFiles/FASER_CCint_avg_12.txt')
         
         expEnergy = expectedData1[:,0]
         expTotal  = (expectedData1[:,1] + expectedData2[:,1]) / 150 # To normalize to 1 fb^-1
